@@ -1,5 +1,6 @@
 import time
 import math
+import typing
 
 def donut(x: float, y: float, z: float) -> float:
    radius = 0.4 
@@ -24,10 +25,28 @@ def sample(x: float, y: float) -> str:
 
         d = donut(t_x, y, t_z)
         if d <= 0.01:
-            return '#'
+            _, nt_y, nt_z = normal(donut, t_x, y, t_z)
+            
+            is_lit = nt_y < -0.15
+            is_frosted = nt_z < - 0.15
+            if is_frosted:
+                return '@' if is_lit else '#'
+            else:
+                return '=' if is_lit else '.'
         else:
             z += d
     return ' '
+
+Sdf = typing.Callable[[float, float, float], float]
+def normal(sdf: Sdf, x: float, y: float, z: float) -> tuple[float, float, float]:
+    dt = 0.001
+
+    n_x = sdf(x + dt, y, z) - sdf(x - dt, y, z)
+    n_y = sdf(x, y + dt, z) - sdf(x , y - dt, z)
+    n_z = sdf(x, y, z + dt) - sdf(x, y, z - dt)
+
+    norm = math.sqrt(n_x**2 + n_y**2 + n_z**2)
+    return (n_x / norm, n_y / norm, n_z / norm)
 
 
 while True:
