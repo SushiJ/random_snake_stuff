@@ -8,6 +8,19 @@ argparser = argparse.ArgumentParser(description="Shitty git")
 argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
 argsubparsers.required = True
 
+argsp = argsubparsers.add_parser("init", help="Initialize a new, empty repository.")
+argsp.add_argument(
+    "path",
+    metavar="directory",
+    nargs="?",
+    default=".",
+    help="Where to create the repository.",
+)
+
+
+def cmd_init(args):
+    repo_create(args.path)
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -88,7 +101,7 @@ def repo_file(repo: GitRepository, *path: str, mkdir=False):
 
 def repo_dir(repo: GitRepository, *path: str, mkdir=False):
 
-    p = repo_file(repo, *path)
+    p = repo_path(repo, *path)
 
     if p and os.path.exists(p):
         if os.path.isdir(p):
