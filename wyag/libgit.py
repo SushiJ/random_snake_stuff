@@ -343,3 +343,68 @@ def hash_object(fd: BufferedReader, fmt, repo=None):
             raise Exception(f"Unknown type {fmt}")
 
     return write_object(obj, repo)
+
+
+def rec_parse(raw, start=0, dct=None):
+    if not dct:
+        dct = dict()
+
+    spc = raw.find(b" ", start)
+    nl = raw.find(b"\n", start)
+
+    # if spc = -1, it's a blank line, meaning it's the message
+    if (spc < 0) or (nl < spc):
+        assert nl == start
+        dct[None] = raw[start + 1 :]
+        return dct
+
+    key = raw[start:spc]
+
+    end = start
+    while True:
+        end = raw.find(b"\n", end + 1)  # find end
+        if raw[end + 1] != ord(" "):
+            break
+
+    value = raw[spc + 1 : end].replace(b"\n ", b"\n")
+
+    if key in dct:
+        if type(dct[key]) == list:
+            dct[key].append(value)
+        else:
+            dct[key] = [dct[key], value]
+
+    else:
+        dct[key] = value
+
+    return rec_parse(raw, start=end + 1, dct=dct)
+
+
+def serialize(kv):
+    ret = b""
+
+    for k in kv.keys():
+        if k == None:
+            continue  # We don't care about the message
+        val = kv[k]
+
+        # Normalise it
+        if type(val) != list:
+            val = [val]
+
+        for v in val:
+            ret += k + b"" + (v.replace(b"\n", b"\n ")) + b"\n"
+
+    ret += b"\n" + kv[None]  # append the message
+
+    return ret
+
+
+class GitCommit(GitObject):
+    fmt = b"commit"
+
+    def deserialize(self, data):
+        self.kv = rec_parse(data)
+
+    def serialize(self):
+        serialize(self.kv)
