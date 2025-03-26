@@ -1,4 +1,5 @@
 import argparse
+from io import BufferedReader
 import sys
 import os
 import configparser
@@ -30,6 +31,21 @@ argsp.add_argument(
     help="Specify the type",
 )
 argsp.add_argument("object", metavar="object", help="The object to display")
+
+argsp = argsubparsers.add_parser(
+    "hash-object", help="Compute object ID and optionally creates a blob from a file"
+)
+argsp.add_argument(
+    "-t",
+    metavar="type",
+    choices=["blob", "tree", "commit", "tag"],
+    default="blob",
+    help="Specify the type",
+)
+argsp.add_argument(
+    "-w", dest="write", action="store_true", help="Write the object into database."
+)
+argsp.add_argument("path", help="Read object from <file>")
 
 
 def cmd_init(args):
@@ -297,3 +313,33 @@ def cat_file(repo: GitRepository, obj, fmt=None):
 
 def find_object(repo: GitRepository, name, fmt=None, follow=True):
     return name  # placeholder till we get more stuff done
+
+
+def cmd_hash_object(args):
+
+    if args.write:
+        repo = repo_find()
+    else:
+        repo = None
+
+    with open(args.path, "rb") as fd:
+        sha = hash_object(fd, args.type.encode(), repo)
+        print(sha)
+
+
+def hash_object(fd: BufferedReader, fmt, repo=None):
+    data = fd.read()
+
+    match fmt:
+        case b"commit":
+            obj = GitCommit(data)
+        case b"tree":
+            obj = GitTree(data)
+        case b"tag":
+            obj = GitTag(data)
+        case b"blob":
+            obj = GitBlob(data)
+        case _:
+            raise Exception(f"Unknown type {fmt}")
+
+    return write_object(obj, repo)
