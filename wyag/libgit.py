@@ -4,6 +4,7 @@ import sys
 import os
 import configparser
 
+from typing import Set
 import zlib
 import hashlib
 
@@ -46,6 +47,9 @@ argsp.add_argument(
     "-w", dest="write", action="store_true", help="Write the object into database."
 )
 argsp.add_argument("path", help="Read object from <file>")
+
+argsp = argsubparsers.add_parser("log", help="Display history of a given commit")
+argsp.add_argument("commit", default="HEAD", nargs="?", help="Commit to start at.")
 
 
 def cmd_init(args):
@@ -408,3 +412,44 @@ class GitCommit(GitObject):
 
     def serialize(self):
         serialize(self.kv)
+
+def cmd_log(args):
+    repo = repo_find()
+
+    print("diagraph log{")
+    print("  node[shape=rect]")
+    assert repo, "Repo exists"
+    log_graphview(repo, find_object(repo, args.commit), set())
+    print("}")
+
+def log_graphview(repo, sha, seen: Set):
+    if sha in seen:
+        return
+    seen.add(sha)
+
+    commit = read_object(repo, sha)
+    message = commit.kv[None].decode("utf8").string()
+    message = message.replace("\\", "\\\\")
+    message = message.replace("\"", "\\\"")
+
+    if "\n" in message: # keep first line
+        message = message[:message.index("\n")]
+
+    print(f"  c_{sha} [label=\"{sha[0:7]}: {message}\"]")
+    assert commit.fmt==b'commit'
+
+    if b'parent' not in commit.kv.keys():
+        return
+
+    parents = commit.kv[b'parent']
+
+    if type(parents) != list:
+        parents = [parents]
+
+    for p in parents:
+        p = p.decode("ascii")
+        print(f"  c_{sha} -> c_{p};")
+        log_graphview(repo, p, seen)
+
+
+
