@@ -3,6 +3,9 @@ import sys
 import os
 import configparser
 
+import zlib
+import hashlib
+
 argparser = argparse.ArgumentParser(description="Shitty git")
 
 argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
@@ -16,6 +19,17 @@ argsp.add_argument(
     default=".",
     help="Where to create the repository.",
 )
+
+argsp = argsubparsers.add_parser(
+    "cat-file", help="Provide content of repository objects"
+)
+argsp.add_argument(
+    "type",
+    metavar="type",
+    choices=["blob", "tree", "commit", "tag"],
+    help="Specify the type",
+)
+argsp.add_argument("object", metavar="object", help="The object to display")
 
 
 def cmd_init(args):
@@ -188,3 +202,98 @@ def repo_find(path=".", required=True):
             return None
 
     return repo_find(parent, required)
+
+
+class GitObject(object):
+
+    def __init__(self, data=None) -> None:
+        if data != None:
+            self.deserialize(data)
+        else:
+            self.init()
+
+    def serialize(self, repo: GitRepository):
+        raise Exception("unimplemented")
+
+    def deserialize(self, data):
+        raise Exception("unimplemented")
+
+    def init(self):
+        pass
+
+
+def read_object(repo, sha):
+    path = repo_file(repo, "objects", sha[0:2], sha[2:])
+
+    if not path or not os.path.isfile(path):
+        return None
+
+    with open(path, "rb") as f:
+        raw = zlib.decompress(f.read())
+
+        x = raw.find(b" ")  # read object type
+        fmt = raw[0:x]
+
+        y = raw.find(b"x00", x)  # Read and validate object size
+        size = int(raw[x:y].decode("ascii"))
+
+        if size != len(raw) - y - 1:
+            raise Exception(f"Malformed object {sha}: bad length")
+
+        match fmt:
+            case b"commit":
+                c = GitCommit
+            case b"tree":
+                c = GitTree
+            case b"tag":
+                c = GitTag
+            case b"blob":
+                c = GitBlob
+            case _:
+                raise Exception(f"Unknown type {fmt.decode('ascii')} for object {sha}")
+
+        return c(raw[y + 1 :])
+
+
+def write_object(obj: GitObject, repo=None):
+    data = obj.serialize
+
+    result = obj.fmt + b" " + str(len(data)).encode() + b"\x00" + data
+
+    sha = hashlib.sha1(result).hexdigest()
+
+    if repo:
+        path = repo_file(repo, "objects", sha[0:2], sha[2:], mkdir=True)
+
+        assert path, "Write object path should exist"
+        if not os.path.exists(path):
+            with open(path, "wb") as f:
+                f.write(zlib.compress(result))
+
+    return sha
+
+
+class GitBlob(GitObject):
+    fmt = b"blob"
+
+    def serialize(self):
+        return self.blobdata
+
+    def deserialize(self, data):
+        self.blobdata = data
+
+
+def cmd_cat_file(args):
+    repo = repo_find()
+
+    assert repo, "There exists a repo"
+    cat_file(repo, args.object, fmt=args.type.encode())
+
+
+def cat_file(repo: GitRepository, obj, fmt=None):
+    obj = read_object(repo, find_object(repo, obj, fmt=fmt))
+    sys.stdout.buffer.write(obj.serialize())
+
+
+def find_object(repo: GitRepository, name, fmt=None, follow=True):
+    return name  # placeholder till we get more stuff done
