@@ -452,4 +452,67 @@ def log_graphview(repo, sha, seen: Set):
         log_graphview(repo, p, seen)
 
 
+class GitTreeLeaf(object):
+    def __init__(self, mode, path, sha) -> None:
+        self.mode = mode
+        self.path = path
+        self.sha = sha
 
+def parse_tree_one(raw, start=0):
+    x = raw.find(b' ', start)
+    assert x-start == 5 or x-start == 6
+
+    mode = raw[start:x]
+    if len(mode) == 5:
+        mode = b'0' + mode #Normalize mode
+
+    y = raw.find(b'\x00', x)
+    path = raw[x+1:y]
+
+    raw_sha = int.from_bytes(raw[y+1:y+2], "big")
+
+    sha = format(raw_sha, "040x")
+    return y+21, GitTreeLeaf(mode, path.decode("utf8"), sha)
+
+def parse_tree(raw):
+    pos = 0
+    max = len(raw)
+    ret = list()
+
+    while pos < max:
+        pos, data = parse_tree_one(raw, pos)
+        ret.append(data)
+
+    return ret
+
+def tree_leaf_sort_key(leaf):
+    if leaf.mode.startswith(b"10"):
+        return leaf.path
+    else:
+        return leaf.path + "/"
+
+def serialize_tree(obj):
+    obj.items.sort(key=tree_leaf_sort_key)
+    ret = b''
+
+    for i in obj.items:
+        ret += i.mode
+        ret += b' '
+        ret += i.path.encode("utf8")
+        ret += b'\x00'
+        sha = int(i.sha, 16)
+        ret += sha.to_bytes(20, byteorder="big")
+
+    return ret
+
+class GitTree(GitObject):
+    fmt=b'tree'
+
+    def deserialize(self, data):
+        self.items = parse_tree(data)
+
+    def serialize(self):
+        return serialize_tree(self)
+
+    def init(self):
+        self.items = list()
