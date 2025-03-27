@@ -63,6 +63,12 @@ argsp.add_argument("tree",
                    help="A tree-ish object."
                    )
 
+argsp = argsubparsers.add_parser("checkout", help="Checkout a commit inside of a directory")
+
+argsp.add_argument("commit", help="The commit or tree to checkout.")
+
+argsp.add_argument("path", help="The EMPTY directory to checkout on.")
+
 def cmd_init(args):
     repo_create(args.path)
 
@@ -253,7 +259,7 @@ class GitObject(object):
         pass
 
 
-def read_object(repo, sha):
+def read_object(repo: GitRepository, sha):
     path = repo_file(repo, "objects", sha[0:2], sha[2:])
 
     if not path or not os.path.isfile(path):
@@ -488,7 +494,7 @@ def parse_tree_one(raw, start=0):
 def parse_tree(raw):
     pos = 0
     max = len(raw)
-    ret = list()
+    ret = list[GitTreeLeaf]()
 
     while pos < max:
         pos, data = parse_tree_one(raw, pos)
@@ -557,3 +563,32 @@ def ls_tree(repo: GitRepository, ref, recursive=None, prefix=""):
             ls_tree(repo, item.sha, recursive, os.path.join(prefix, item.path))
 
     
+def cmd_checkout(args):
+    repo = repo_find()
+    assert repo, "Repo exists"
+
+    obj = read_object(repo, find_object(repo, args.commit))
+    if obj.fmt == b'commit':
+        obj = read_object(repo, obj.kv[b'tree'].decode("ascii"))
+
+    if os.path.exists(args.path):
+        if not os.path.isdir(args.path):
+            raise Exception(f"Not a directory {args.path}")
+        if os.listdir(args.path):
+            raise Exception(f"Not empty {args.path}")
+    else:
+        os.makedirs(args.path)
+
+    tree_checkout(repo, obj, os.path.realpath(args.path))
+
+def tree_checkout(repo: GitRepository, tree, path):
+    for item in tree.items:
+        obj = read_object(repo, item.sha)
+        dest = os.path.join(path, item.path)
+
+        if obj.fmt == b'tree':
+            os.mkdir(dest)
+            tree_checkout(repo, obj, dest)
+        elif obj.fmt == b'blob':
+            with open(dest, "wb") as f:
+                f.write(obj.blobdata)
