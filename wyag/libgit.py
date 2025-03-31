@@ -51,23 +51,30 @@ argsp.add_argument("path", help="Read object from <file>")
 argsp = argsubparsers.add_parser("log", help="Display history of a given commit")
 argsp.add_argument("commit", default="HEAD", nargs="?", help="Commit to start at.")
 
-argsp = argsubparsers.add_parser("ls-tree", 
-                                 help="Pretty-print a tree object."
-                                 )
-argsp.add_argument("-r",
-                   dest="recursive",
-                   action="store_true",
-                   help="Recurse into sub-trees"
-                   )
-argsp.add_argument("tree",
-                   help="A tree-ish object."
-                   )
+argsp = argsubparsers.add_parser("ls-tree", help="Pretty-print a tree object.")
+argsp.add_argument(
+    "-r", dest="recursive", action="store_true", help="Recurse into sub-trees"
+)
+argsp.add_argument("tree", help="A tree-ish object.")
 
-argsp = argsubparsers.add_parser("checkout", help="Checkout a commit inside of a directory")
+argsp = argsubparsers.add_parser(
+    "checkout", help="Checkout a commit inside of a directory"
+)
 
 argsp.add_argument("commit", help="The commit or tree to checkout.")
 
 argsp.add_argument("path", help="The EMPTY directory to checkout on.")
+
+argsp = argsubparsers.add_parser("show-ref", help="List references")
+
+
+def cmd_show_ref(args):
+    repo = repo_find()
+    assert repo, "This has be a git repo"
+    refs = ref_list(repo)
+
+    show_ref(repo, refs, prefix="refs")
+
 
 def cmd_init(args):
     repo_create(args.path)
@@ -151,7 +158,6 @@ def repo_file(repo: GitRepository, *path: str, mkdir=False):
 
 
 def repo_dir(repo: GitRepository, *path: str, mkdir=False):
-
     p = repo_path(repo, *path)
 
     if p and os.path.exists(p):
@@ -168,7 +174,6 @@ def repo_dir(repo: GitRepository, *path: str, mkdir=False):
 
 
 def repo_create(path: str):
-
     repo = GitRepository(path, True)
     # If we're initializing repo, We should have a worktree
 
@@ -242,7 +247,6 @@ def repo_find(path=".", required=True):
 
 
 class GitObject(object):
-
     def __init__(self, data=None) -> None:
         if data != None:
             self.deserialize(data)
@@ -337,7 +341,6 @@ def find_object(repo: GitRepository, name, fmt=None, follow=True):
 
 
 def cmd_hash_object(args):
-
     if args.write:
         repo = repo_find()
     else:
@@ -430,6 +433,7 @@ class GitCommit(GitObject):
     def serialize(self):
         serialize(self.kv)
 
+
 def cmd_log(args):
     repo = repo_find()
 
@@ -439,6 +443,7 @@ def cmd_log(args):
     log_graphview(repo, find_object(repo, args.commit), set())
     print("}")
 
+
 def log_graphview(repo, sha, seen: Set):
     if sha in seen:
         return
@@ -447,18 +452,18 @@ def log_graphview(repo, sha, seen: Set):
     commit = read_object(repo, sha)
     message = commit.kv[None].decode("utf8").string()
     message = message.replace("\\", "\\\\")
-    message = message.replace("\"", "\\\"")
+    message = message.replace('"', '\\"')
 
-    if "\n" in message: # keep first line
-        message = message[:message.index("\n")]
+    if "\n" in message:  # keep first line
+        message = message[: message.index("\n")]
 
-    print(f"  c_{sha} [label=\"{sha[0:7]}: {message}\"]")
-    assert commit.fmt==b'commit'
+    print(f'  c_{sha} [label="{sha[0:7]}: {message}"]')
+    assert commit.fmt == b"commit"
 
-    if b'parent' not in commit.kv.keys():
+    if b"parent" not in commit.kv.keys():
         return
 
-    parents = commit.kv[b'parent']
+    parents = commit.kv[b"parent"]
 
     if type(parents) != list:
         parents = [parents]
@@ -475,21 +480,23 @@ class GitTreeLeaf(object):
         self.path = path
         self.sha = sha
 
+
 def parse_tree_one(raw, start=0):
-    x = raw.find(b' ', start)
-    assert x-start == 5 or x-start == 6
+    x = raw.find(b" ", start)
+    assert x - start == 5 or x - start == 6
 
     mode = raw[start:x]
     if len(mode) == 5:
-        mode = b'0' + mode #Normalize mode
+        mode = b"0" + mode  # Normalize mode
 
-    y = raw.find(b'\x00', x)
-    path = raw[x+1:y]
+    y = raw.find(b"\x00", x)
+    path = raw[x + 1 : y]
 
-    raw_sha = int.from_bytes(raw[y+1:y+2], "big")
+    raw_sha = int.from_bytes(raw[y + 1 : y + 2], "big")
 
     sha = format(raw_sha, "040x")
-    return y+21, GitTreeLeaf(mode, path.decode("utf8"), sha)
+    return y + 21, GitTreeLeaf(mode, path.decode("utf8"), sha)
+
 
 def parse_tree(raw):
     pos = 0
@@ -502,28 +509,31 @@ def parse_tree(raw):
 
     return ret
 
+
 def tree_leaf_sort_key(leaf):
     if leaf.mode.startswith(b"10"):
         return leaf.path
     else:
         return leaf.path + "/"
 
+
 def serialize_tree(obj):
     obj.items.sort(key=tree_leaf_sort_key)
-    ret = b''
+    ret = b""
 
     for i in obj.items:
         ret += i.mode
-        ret += b' '
+        ret += b" "
         ret += i.path.encode("utf8")
-        ret += b'\x00'
+        ret += b"\x00"
         sha = int(i.sha, 16)
         ret += sha.to_bytes(20, byteorder="big")
 
     return ret
 
+
 class GitTree(GitObject):
-    fmt=b'tree'
+    fmt = b"tree"
 
     def deserialize(self, data):
         self.items = parse_tree(data)
@@ -534,11 +544,13 @@ class GitTree(GitObject):
     def init(self):
         self.items = list()
 
+
 def cmd_ls_tree(args):
     repo = repo_find()
     assert repo, "This needs to exist"
 
     ls_tree(repo, args.tree, args.recursive)
+
 
 def ls_tree(repo: GitRepository, ref, recursive=None, prefix=""):
     sha = find_object(repo, ref, fmt=b"tree")
@@ -551,25 +563,32 @@ def ls_tree(repo: GitRepository, ref, recursive=None, prefix=""):
             type = item.mode[0:2]
 
         match type:
-            case b'04': type = 'tree'
-            case b'10': type = 'blob' # regular file
-            case b'12': type = 'blob' # symlink
-            case b'16': type = 'commit' # submodule
-            case _: raise Exception(f"Unknown or weird tree leaf mode {item.mode}")
+            case b"04":
+                type = "tree"
+            case b"10":
+                type = "blob"  # regular file
+            case b"12":
+                type = "blob"  # symlink
+            case b"16":
+                type = "commit"  # submodule
+            case _:
+                raise Exception(f"Unknown or weird tree leaf mode {item.mode}")
 
-        if not (recursive and type == 'tree'):
-            print(f"{'0' * (6 - len(item.mode)) + item.mode.decode("ascii")} {type} {item.sha}\t{os.path.join(prefix, item.path)}")
+        if not (recursive and type == "tree"):
+            print(
+                f"{'0' * (6 - len(item.mode)) + item.mode.decode('ascii')} {type} {item.sha}\t{os.path.join(prefix, item.path)}"
+            )
         else:
             ls_tree(repo, item.sha, recursive, os.path.join(prefix, item.path))
 
-    
+
 def cmd_checkout(args):
     repo = repo_find()
     assert repo, "Repo exists"
 
     obj = read_object(repo, find_object(repo, args.commit))
-    if obj.fmt == b'commit':
-        obj = read_object(repo, obj.kv[b'tree'].decode("ascii"))
+    if obj.fmt == b"commit":
+        obj = read_object(repo, obj.kv[b"tree"].decode("ascii"))
 
     if os.path.exists(args.path):
         if not os.path.isdir(args.path):
@@ -581,14 +600,60 @@ def cmd_checkout(args):
 
     tree_checkout(repo, obj, os.path.realpath(args.path))
 
+
 def tree_checkout(repo: GitRepository, tree, path):
     for item in tree.items:
         obj = read_object(repo, item.sha)
         dest = os.path.join(path, item.path)
 
-        if obj.fmt == b'tree':
+        if obj.fmt == b"tree":
             os.mkdir(dest)
             tree_checkout(repo, obj, dest)
-        elif obj.fmt == b'blob':
+        elif obj.fmt == b"blob":
             with open(dest, "wb") as f:
                 f.write(obj.blobdata)
+
+
+def ref_resolve(repo: GitRepository, ref):
+    path = repo_file(repo, ref)
+    assert path, "Path should exist for ref resolve"
+
+    if not os.path.isfile(path):
+        return None
+
+    with open(path, "r") as f:
+        data = f.read()[:-1]  # Drop last \n
+
+        if data.startswith("ref: "):
+            # indirect ref
+            return ref_resolve(repo, data[5:])
+        else:
+            return data
+
+
+def ref_list(repo: GitRepository, path=None):
+    if not path:
+        path = repo_dir(repo, "refs")
+        assert path, "Refs dir should exist"
+    ret = dict()
+
+    for f in sorted(os.listdir(path)):
+        can = os.path.join(path, f)
+        if os.path.isdir(can):
+            ret[f] = ref_list(repo, can)
+        else:
+            ret[f] = ref_resolve(repo, can)
+
+    return ret
+
+
+def show_ref(repo: GitRepository, refs, with_hash=True, prefix=""):
+    if prefix:
+        prefix = prefix + "/"
+    for k, v in refs.items():
+        if type(v) == str and with_hash:
+            print(f"{v} {prefix}{k}")
+        elif type(v) == str:
+            print(f"{prefix}{k}")
+        else:
+            show_ref(repo, v, with_hash=with_hash, prefix=f"{prefix}{k}")
